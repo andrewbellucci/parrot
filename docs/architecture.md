@@ -73,6 +73,7 @@ Subcommands:
 - `parrot models download <id>` — pre-fetch a model
 - `parrot doctor` — check microphone and accessibility permissions, print remediation steps
 - `parrot hotkey [key]` — show or persist the push-to-talk key
+- `parrot restart` — restart a loaded LaunchAgent, or bootstrap an installed one
 
 ### `HotkeyMonitor`
 

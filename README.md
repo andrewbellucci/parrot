@@ -32,7 +32,8 @@ parrot                                 # run in the foreground (^C to quit)
 parrot setup                           # one-time setup: permissions + model download
 parrot install --launch-at-login       # register a LaunchAgent (background daemon)
 parrot install --uninstall             # remove the LaunchAgent
-parrot doctor                          # check permissions + fn key setting
+parrot restart                         # restart (or start) the installed LaunchAgent
+parrot doctor                          # check permissions + hotkey settings
 parrot models list                     # list available models
 parrot models download <id>            # pre-download a model
 parrot --model whisper-large-v3-turbo  # bigger, multilingual, slower first-run
@@ -71,12 +72,11 @@ To replace an existing global installation with the current checkout:
 ./scripts/install-local.sh
 ```
 
-The script builds a release binary, stops and restarts an already-loaded
-LaunchAgent, and saves the previous binary under
+The script builds a release binary, stops an already-loaded LaunchAgent, and
+saves the previous binary under
 `~/Library/Application Support/parrot/backups/`. Set `PARROT_INSTALL_DIR` or
 `PARROT_BACKUP_DIR` to override those locations.
 
-Local builds are ad-hoc signed, so macOS may require Accessibility permission
-again after replacement. If the restarted daemon reports `accessibility not
-granted`, remove and re-add `/usr/local/bin/parrot` under System Settings →
-Privacy & Security → Accessibility, then run `parrot install --launch-at-login`.
+Local builds are ad-hoc signed, so after replacement remove and re-add
+`/usr/local/bin/parrot` under System Settings → Privacy & Security →
+Accessibility, then run `parrot restart`.

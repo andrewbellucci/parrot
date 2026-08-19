@@ -8,7 +8,15 @@ struct Parrot: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "parrot",
         abstract: "Minimal macOS dictation daemon. Hold Fn, speak, release.",
-        subcommands: [Run.self, Setup.self, Doctor.self, Models.self, Install.self, HotkeyCommand.self],
+        subcommands: [
+            Run.self,
+            Setup.self,
+            Doctor.self,
+            Models.self,
+            Install.self,
+            Restart.self,
+            HotkeyCommand.self,
+        ],
         defaultSubcommand: Run.self
     )
 }
@@ -206,7 +214,7 @@ struct HotkeyCommand: ParsableCommand {
         }
         try store.save(key)
         print("✓ hotkey set to \(key.rawValue)")
-        print("  restart parrot for the change to take effect")
+        print("  run `parrot restart` for the change to take effect")
     }
 }
 

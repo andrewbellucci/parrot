@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Build the current checkout, install it over the global Parrot binary, and
-# restart the LaunchAgent when it was already loaded.
+# stop a loaded LaunchAgent so Accessibility can be re-granted safely.
 
 set -euo pipefail
 
@@ -69,15 +69,13 @@ else
 fi
 
 if [ "$AGENT_WAS_LOADED" -eq 1 ]; then
-    echo "→ restarting LaunchAgent"
-    launchctl bootstrap "$DOMAIN" "$PLIST"
     RESTART_PENDING=0
+    echo "→ LaunchAgent left stopped for the Accessibility re-grant"
 else
     echo "→ LaunchAgent was not loaded; start Parrot manually when ready"
 fi
 
 echo "✓ installed local release at $TARGET"
-echo "  note: local builds are ad-hoc signed, so macOS may require Accessibility access again"
-echo "  if the hotkey does not respond, re-add $TARGET under:"
+echo "  local builds are ad-hoc signed; re-add $TARGET under:"
 echo "  System Settings → Privacy & Security → Accessibility"
-echo "  then run: $TARGET install --launch-at-login"
+echo "  then run: $TARGET restart"
