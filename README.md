@@ -36,9 +36,15 @@ parrot doctor                          # check permissions + fn key setting
 parrot models list                     # list available models
 parrot models download <id>            # pre-download a model
 parrot --model whisper-large-v3-turbo  # bigger, multilingual, slower first-run
-parrot --hotkey right-option           # change the push-to-talk key
+parrot hotkey                           # show the current push-to-talk key
+parrot hotkey right-option              # persist a new push-to-talk key
 parrot --no-overlay                    # disable the bottom-of-screen pill
 ```
+
+Supported hotkeys are `fn`, `left-option`, `right-option`, `left-control`,
+`right-control`, `left-command`, `right-command`, `left-shift`, and
+`right-shift`. The setting is saved to `~/.config/parrot/config.toml` and takes
+effect the next time Parrot starts.
 
 ## Stack
 

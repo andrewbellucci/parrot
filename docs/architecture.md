@@ -72,10 +72,11 @@ Subcommands:
 - `parrot models list` — show registered models, mark which are downloaded
 - `parrot models download <id>` — pre-fetch a model
 - `parrot doctor` — check microphone and accessibility permissions, print remediation steps
+- `parrot hotkey [key]` — show or persist the push-to-talk key
 
 ### `HotkeyMonitor`
 
-Global hotkey via `CGEventTap` (requires Accessibility permission). Default: **hold Fn**. Detected via `flagsChanged` events with `NSEvent.ModifierFlags.function` / `kCGEventFlagMaskSecondaryFn`. Emits `.pressed` / `.released`. Configurable via `--hotkey` flag or config file.
+Global hotkey via `CGEventTap` (requires Accessibility permission). Default: **hold Fn**. Modifier key codes distinguish left and right variants, while event flags distinguish press and release edges. Emits `.pressed` / `.released`. Configurable via `parrot hotkey <key>` or the config file.
 
 **Fn key caveat:** macOS by default maps the Fn (🌐) key to "Show Emoji & Symbols" or "Start Dictation" depending on the user's setting in System Settings → Keyboard → Press 🌐 key to. The CGEventTap sees the keypress regardless, but the system action also fires. `parrot doctor` will detect this setting and instruct the user to change it to "Do Nothing" so Fn becomes a clean modifier.
 
@@ -152,16 +153,14 @@ On first selection (or via `parrot models download <id>`), downloads to `~/Libra
 
 ### `Config`
 
-Plain `Codable` struct. Loaded from (in order): CLI flags > `~/.config/parrot/config.toml` > defaults.
+The persistent hotkey setting is stored in `~/.config/parrot/config.toml`:
 
 ```toml
-model = "whisper-large-v3-turbo"
 hotkey = "fn"
-inject_mode = "paste"   # or "type-unicode"
-overlay = true          # show recording pill at bottom of screen
 ```
 
-CLI flags override the file. No settings UI; you edit the TOML.
+Use `parrot hotkey <key>` to update it while preserving other TOML settings.
+Model and overlay selection remain runtime CLI flags.
 
 ## Permissions
 

@@ -8,7 +8,7 @@ struct Parrot: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "parrot",
         abstract: "Minimal macOS dictation daemon. Hold Fn, speak, release.",
-        subcommands: [Run.self, Setup.self, Doctor.self, Models.self, Install.self],
+        subcommands: [Run.self, Setup.self, Doctor.self, Models.self, Install.self, HotkeyCommand.self],
         defaultSubcommand: Run.self
     )
 }
@@ -35,8 +35,9 @@ struct Run: ParsableCommand {
     var model: String?
 
     func run() throws {
+        let hotkey = try HotkeyConfigStore().load()
         if !skipDoctor {
-            let checks = DoctorReport.run()
+            let checks = DoctorReport.run(hotkey: hotkey)
             if !DoctorReport.allOK(checks) {
                 FileHandle.standardError.write(Data("startup checks failed:\n".utf8))
                 DoctorReport.print(checks)
@@ -81,7 +82,7 @@ struct Run: ParsableCommand {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
-        let monitor = HotkeyMonitor(debug: debugHotkey)
+        let monitor = HotkeyMonitor(binding: hotkey, debug: debugHotkey)
         let capture = AudioCapture()
         let dumpWav = self.dumpWav
         let overlay: RecordingOverlay? = noOverlay ? nil : MainActor.assumeIsolated { RecordingOverlay() }
@@ -169,22 +170,43 @@ struct Run: ParsableCommand {
         sigint.resume()
         signal(SIGINT, SIG_IGN)
 
-        FileHandle.standardError.write(Data("listening on fn hold · model: \(chosenModel.id) · ^C to quit\n".utf8))
+        FileHandle.standardError.write(Data("listening on \(hotkey.rawValue) hold · model: \(chosenModel.id) · ^C to quit\n".utf8))
         app.run()
     }
 }
 
 struct Doctor: ParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Check microphone, accessibility, and Fn key configuration."
+        abstract: "Check microphone, accessibility, and hotkey configuration."
     )
 
     func run() throws {
-        let checks = DoctorReport.run()
+        let checks = DoctorReport.run(hotkey: try HotkeyConfigStore().load())
         DoctorReport.print(checks)
         if !DoctorReport.allOK(checks) {
             throw ExitCode(1)
         }
+    }
+}
+
+struct HotkeyCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "hotkey",
+        abstract: "Show or change the push-to-talk key."
+    )
+
+    @Argument(help: "New hotkey (\(HotkeyBinding.allCases.map(\.rawValue).joined(separator: ", "))).")
+    var key: HotkeyBinding?
+
+    func run() throws {
+        let store = HotkeyConfigStore()
+        guard let key else {
+            print(try store.load().rawValue)
+            return
+        }
+        try store.save(key)
+        print("✓ hotkey set to \(key.rawValue)")
+        print("  restart parrot for the change to take effect")
     }
 }
 
