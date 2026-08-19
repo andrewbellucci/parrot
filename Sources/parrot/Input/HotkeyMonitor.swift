@@ -3,37 +3,29 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-/// Watches a single modifier key (default: Fn) and emits press/release edges.
+/// Watches a single modifier key and emits press/release edges.
 /// Requires Accessibility permission. If the tap fails to register, callers
 /// will see an error from `start()`.
 final class HotkeyMonitor {
     enum Event { case pressed, released }
-    enum HotkeyError: Error { case tapCreateFailed }
+    enum HotkeyError: Error { case accessibilityDenied, tapCreateFailed }
 
-    /// Mask of the modifier we treat as the hotkey. Fn = `.maskSecondaryFn`.
-    private let mask: CGEventFlags
+    private let binding: HotkeyBinding
     private let debug: Bool
     private var onEvent: ((Event) -> Void)?
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isPressed = false
 
-    init(mask: CGEventFlags = .maskSecondaryFn, debug: Bool = false) {
-        self.mask = mask
+    init(binding: HotkeyBinding = .defaultBinding, debug: Bool = false) {
+        self.binding = binding
         self.debug = debug
     }
 
     func start(onEvent: @escaping (Event) -> Void) throws {
         self.onEvent = onEvent
 
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        let trusted = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
-        if !trusted {
-            FileHandle.standardError.write(Data(
-                "accessibility not granted — system prompt opened. Grant access, then quit and relaunch parrot.\n".utf8
-            ))
-            throw HotkeyError.tapCreateFailed
-        }
+        guard AXIsProcessTrusted() else { throw HotkeyError.accessibilityDenied }
 
         let mask: CGEventMask =
             (1 << CGEventType.flagsChanged.rawValue)
@@ -41,13 +33,13 @@ final class HotkeyMonitor {
             | (1 << CGEventType.keyUp.rawValue)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
-        // .cgSessionEventTap is the right level for an accessibility-granted
-        // user process (.cghidEventTap requires root).
+        // An active filter prevents the learned push-to-talk key from reaching
+        // the foreground app. This matters for character keys and Caps Lock.
         guard
             let tap = CGEvent.tapCreate(
                 tap: .cgSessionEventTap,
                 place: .headInsertEventTap,
-                options: .listenOnly,
+                options: .defaultTap,
                 eventsOfInterest: mask,
                 callback: hotkeyCallback,
                 userInfo: userInfo
@@ -86,11 +78,22 @@ final class HotkeyMonitor {
                         .utf8
                 ))
         }
-        guard type == .flagsChanged else { return }
-        let pressed = event.flags.contains(mask)
-        guard pressed != isPressed else { return }
+        let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+        let pressed = binding.nextPressedState(
+            type: type,
+            keyCode: keyCode,
+            isRepeat: isRepeat,
+            currentlyPressed: isPressed,
+        )
+        guard let pressed, pressed != isPressed else { return }
         isPressed = pressed
         onEvent?(pressed ? .pressed : .released)
+    }
+
+    fileprivate func shouldSuppress(type: CGEventType, event: CGEvent) -> Bool {
+        let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        return binding.matches(type: type, keyCode: keyCode)
     }
 }
 
@@ -109,11 +112,12 @@ private func hotkeyCallback(
         return Unmanaged.passUnretained(event)
     }
 
+    let shouldSuppress = monitor.shouldSuppress(type: type, event: event)
     let copy = event.copy()
     DispatchQueue.main.async {
         if let copy {
             monitor.handle(type: type, event: copy)
         }
     }
-    return Unmanaged.passUnretained(event)
+    return shouldSuppress ? nil : Unmanaged.passUnretained(event)
 }

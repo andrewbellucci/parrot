@@ -32,13 +32,22 @@ parrot                                 # run in the foreground (^C to quit)
 parrot setup                           # one-time setup: permissions + model download
 parrot install --launch-at-login       # register a LaunchAgent (background daemon)
 parrot install --uninstall             # remove the LaunchAgent
-parrot doctor                          # check permissions + fn key setting
+parrot restart                         # restart (or start) the installed LaunchAgent
+parrot doctor                          # check permissions + hotkey settings
 parrot models list                     # list available models
 parrot models download <id>            # pre-download a model
 parrot --model whisper-large-v3-turbo  # bigger, multilingual, slower first-run
-parrot --hotkey right-option           # change the push-to-talk key
+parrot hotkey                          # show the learned push-to-talk key
+parrot hotkey learn                    # press a key to learn it dynamically
 parrot --no-overlay                    # disable the bottom-of-screen pill
 ```
+
+The learner accepts ordinary keys and modifiers, stores the observed macOS key
+code and event family in `~/.config/parrot/config.toml`, and suppresses the key
+while Parrot is running. For programmable keyboards, assigning a dedicated key
+such as F13 gives Parrot a unique input without maintaining a key-name table.
+Firmware behaviors still resolve before macOS sees them: a ZMK hold-tap that
+emits Shift when held will be learned as Shift.
 
 ## Stack
 
@@ -57,3 +66,18 @@ See [docs/architecture.md](docs/architecture.md) for design notes.
 swift build -c release
 .build/release/parrot --help
 ```
+
+To replace an existing global installation with the current checkout:
+
+```sh
+./scripts/install-local.sh
+```
+
+The script builds a release binary, stops an already-loaded LaunchAgent, and
+saves the previous binary under
+`~/Library/Application Support/parrot/backups/`. Set `PARROT_INSTALL_DIR` or
+`PARROT_BACKUP_DIR` to override those locations.
+
+Local builds are ad-hoc signed, so after replacement remove and re-add
+`/usr/local/bin/parrot` under System Settings → Privacy & Security →
+Accessibility, then run `parrot restart`.

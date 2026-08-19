@@ -34,20 +34,15 @@ struct Install: ParsableCommand {
 
     // MARK: -
 
-    private static let label = "com.digimata.parrot"
-
     private var plistURL: URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home
-            .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
-            .appendingPathComponent("\(Self.label).plist")
+        LaunchAgentManager.plistURL
     }
 
     private func writeAgent() throws {
         let binary = try resolveBinaryPath()
 
         let plist: [String: Any] = [
-            "Label": Self.label,
+            "Label": LaunchAgentManager.label,
             "ProgramArguments": [binary, "run", "--skip-doctor"],
             "RunAtLoad": true,
             "KeepAlive": ["SuccessfulExit": false] as [String: Any],
@@ -69,8 +64,8 @@ struct Install: ParsableCommand {
         try data.write(to: url, options: .atomic)
 
         // Best-effort bootstrap; ignore failure if already loaded.
-        _ = runLaunchctl(["bootout", "gui/\(uid())", url.path])
-        let result = runLaunchctl(["bootstrap", "gui/\(uid())", url.path])
+        _ = LaunchAgentManager.run(["bootout", LaunchAgentManager.domain, url.path])
+        let result = LaunchAgentManager.run(["bootstrap", LaunchAgentManager.domain, url.path])
         if result.status != 0 {
             FileHandle.standardError.write(Data(
                 "warning: launchctl bootstrap exited \(result.status):\n\(result.stderr)\n".utf8
@@ -86,7 +81,7 @@ struct Install: ParsableCommand {
     private func removeAgent() throws {
         let url = plistURL
         if FileManager.default.fileExists(atPath: url.path) {
-            _ = runLaunchctl(["bootout", "gui/\(uid())", url.path])
+            _ = LaunchAgentManager.run(["bootout", LaunchAgentManager.domain, url.path])
             try FileManager.default.removeItem(at: url)
             print("✓ launch-at-login removed")
         } else {
@@ -114,10 +109,53 @@ struct Install: ParsableCommand {
         ))
         throw ExitCode(1)
     }
+}
 
-    private func uid() -> uid_t { getuid() }
+struct Restart: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "restart",
+        abstract: "Restart the launch-at-login daemon."
+    )
 
-    private func runLaunchctl(_ args: [String]) -> (status: Int32, stderr: String) {
+    func run() throws {
+        guard FileManager.default.fileExists(atPath: LaunchAgentManager.plistURL.path) else {
+            throw ValidationError(
+                "LaunchAgent is not installed; run `parrot install --launch-at-login` first"
+            )
+        }
+
+        let wasLoaded = LaunchAgentManager.isLoaded
+        let arguments = wasLoaded
+            ? ["kickstart", "-k", LaunchAgentManager.serviceTarget]
+            : ["bootstrap", LaunchAgentManager.domain, LaunchAgentManager.plistURL.path]
+        let result = LaunchAgentManager.run(arguments)
+        guard result.status == 0 else {
+            let detail = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw ValidationError(
+                detail.isEmpty
+                    ? "launchctl exited with status \(result.status)"
+                    : "launchctl exited with status \(result.status): \(detail)"
+            )
+        }
+
+        print(wasLoaded ? "✓ parrot restarted" : "✓ parrot started")
+        print("  logs: /tmp/parrot.out.log, /tmp/parrot.err.log")
+    }
+}
+
+enum LaunchAgentManager {
+    static let label = "com.digimata.parrot"
+
+    static var domain: String { "gui/\(getuid())" }
+    static var serviceTarget: String { "\(domain)/\(label)" }
+    static var plistURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+            .appendingPathComponent("\(label).plist")
+    }
+    static var isLoaded: Bool { run(["print", serviceTarget]).status == 0 }
+
+    static func run(_ args: [String]) -> (status: Int32, stderr: String) {
         let task = Process()
         task.launchPath = "/bin/launchctl"
         task.arguments = args
