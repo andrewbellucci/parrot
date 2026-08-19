@@ -64,3 +64,19 @@ See [docs/architecture.md](docs/architecture.md) for design notes.
 swift build -c release
 .build/release/parrot --help
 ```
+
+To replace an existing global installation with the current checkout:
+
+```sh
+./scripts/install-local.sh
+```
+
+The script builds a release binary, stops and restarts an already-loaded
+LaunchAgent, and saves the previous binary under
+`~/Library/Application Support/parrot/backups/`. Set `PARROT_INSTALL_DIR` or
+`PARROT_BACKUP_DIR` to override those locations.
+
+Local builds are ad-hoc signed, so macOS may require Accessibility permission
+again after replacement. If the restarted daemon reports `accessibility not
+granted`, remove and re-add `/usr/local/bin/parrot` under System Settings →
+Privacy & Security → Accessibility, then run `parrot install --launch-at-login`.
