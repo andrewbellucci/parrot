@@ -76,7 +76,7 @@ Subcommands:
 
 ### `HotkeyMonitor`
 
-Global hotkey via `CGEventTap` (requires Accessibility permission). Default: **hold Fn**. Modifier key codes distinguish left and right variants, while event flags distinguish press and release edges. Emits `.pressed` / `.released`. Configurable via `parrot hotkey <key>` or the config file.
+Global hotkey via `CGEventTap` (requires Accessibility permission). Default: **hold Fn**. Modifier key codes distinguish left and right variants, while event flags distinguish press and release edges. Caps Lock uses an active event filter and alternating edges so it acts as a hold key without toggling capitalization; the other bindings use a passive event tap. Emits `.pressed` / `.released`. Configurable via `parrot hotkey <key>` or the config file.
 
 **Fn key caveat:** macOS by default maps the Fn (🌐) key to "Show Emoji & Symbols" or "Start Dictation" depending on the user's setting in System Settings → Keyboard → Press 🌐 key to. The CGEventTap sees the keypress regardless, but the system action also fires. `parrot doctor` will detect this setting and instruct the user to change it to "Do Nothing" so Fn becomes a clean modifier.
 

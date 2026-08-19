@@ -3,6 +3,24 @@ import Testing
 @testable import parrot
 
 struct HotkeyConfigStoreTests {
+    @Test func capsLockUsesPhysicalEdgesAndIsSuppressed() {
+        #expect(HotkeyBinding.capsLock.keyCode == 57)
+        #expect(HotkeyBinding.capsLock.eventFlags == .maskAlphaShift)
+        #expect(HotkeyBinding.capsLock.suppressesSystemEvent)
+        #expect(
+            HotkeyBinding.capsLock.nextPressedState(
+                currentlyPressed: false,
+                eventFlags: .maskAlphaShift
+            )
+        )
+        #expect(
+            !HotkeyBinding.capsLock.nextPressedState(
+                currentlyPressed: true,
+                eventFlags: .maskAlphaShift
+            )
+        )
+    }
+
     @Test func missingConfigDefaultsToFn() throws {
         let url = temporaryConfigURL()
         #expect(try HotkeyConfigStore(url: url).load() == .fn)

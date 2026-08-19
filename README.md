@@ -41,10 +41,11 @@ parrot hotkey right-option              # persist a new push-to-talk key
 parrot --no-overlay                    # disable the bottom-of-screen pill
 ```
 
-Supported hotkeys are `fn`, `left-option`, `right-option`, `left-control`,
-`right-control`, `left-command`, `right-command`, `left-shift`, and
-`right-shift`. The setting is saved to `~/.config/parrot/config.toml` and takes
-effect the next time Parrot starts.
+Supported hotkeys are `fn`, `caps-lock`, `left-option`, `right-option`,
+`left-control`, `right-control`, `left-command`, `right-command`, `left-shift`,
+and `right-shift`. When selected, Caps Lock is captured for push-to-talk and
+does not toggle capitalization. The setting is saved to
+`~/.config/parrot/config.toml` and takes effect the next time Parrot starts.
 
 ## Stack
 

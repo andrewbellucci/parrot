@@ -4,6 +4,7 @@ import Foundation
 
 enum HotkeyBinding: String, CaseIterable, ExpressibleByArgument {
     case fn
+    case capsLock = "caps-lock"
     case leftOption = "left-option"
     case rightOption = "right-option"
     case leftControl = "left-control"
@@ -16,6 +17,7 @@ enum HotkeyBinding: String, CaseIterable, ExpressibleByArgument {
     var eventFlags: CGEventFlags {
         switch self {
         case .fn: .maskSecondaryFn
+        case .capsLock: .maskAlphaShift
         case .leftOption, .rightOption: .maskAlternate
         case .leftControl, .rightControl: .maskControl
         case .leftCommand, .rightCommand: .maskCommand
@@ -27,6 +29,7 @@ enum HotkeyBinding: String, CaseIterable, ExpressibleByArgument {
     var keyCode: CGKeyCode {
         switch self {
         case .fn: 63
+        case .capsLock: 57
         case .leftOption: 58
         case .rightOption: 61
         case .leftControl: 59
@@ -36,6 +39,15 @@ enum HotkeyBinding: String, CaseIterable, ExpressibleByArgument {
         case .leftShift: 56
         case .rightShift: 60
         }
+    }
+
+    var suppressesSystemEvent: Bool { self == .capsLock }
+
+    func nextPressedState(currentlyPressed: Bool, eventFlags: CGEventFlags) -> Bool {
+        // Caps Lock is a toggle, so its flag does not represent the physical
+        // up/down state. Each flagsChanged edge alternates the held state.
+        if self == .capsLock { return !currentlyPressed }
+        return currentlyPressed ? false : eventFlags.contains(self.eventFlags)
     }
 }
 

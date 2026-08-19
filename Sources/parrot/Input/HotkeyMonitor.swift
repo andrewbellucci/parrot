@@ -41,12 +41,13 @@ final class HotkeyMonitor {
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
         // .cgSessionEventTap is the right level for an accessibility-granted
-        // user process (.cghidEventTap requires root).
+        // user process (.cghidEventTap requires root). Caps Lock uses an active
+        // filter so holding the push-to-talk key does not toggle capitalization.
         guard
             let tap = CGEvent.tapCreate(
                 tap: .cgSessionEventTap,
                 place: .headInsertEventTap,
-                options: .listenOnly,
+                options: binding.suppressesSystemEvent ? .defaultTap : .listenOnly,
                 eventsOfInterest: mask,
                 callback: hotkeyCallback,
                 userInfo: userInfo
@@ -88,12 +89,19 @@ final class HotkeyMonitor {
         guard type == .flagsChanged else { return }
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
         guard keyCode == binding.keyCode else { return }
-        // Once this specific key is down, its next flagsChanged event is its
-        // release even if the matching modifier on the other side remains held.
-        let pressed = isPressed ? false : event.flags.contains(binding.eventFlags)
+        let pressed = binding.nextPressedState(
+            currentlyPressed: isPressed,
+            eventFlags: event.flags
+        )
         guard pressed != isPressed else { return }
         isPressed = pressed
         onEvent?(pressed ? .pressed : .released)
+    }
+
+    fileprivate func shouldSuppress(type: CGEventType, event: CGEvent) -> Bool {
+        guard binding.suppressesSystemEvent, type == .flagsChanged else { return false }
+        let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        return keyCode == binding.keyCode
     }
 }
 
@@ -112,11 +120,12 @@ private func hotkeyCallback(
         return Unmanaged.passUnretained(event)
     }
 
+    let shouldSuppress = monitor.shouldSuppress(type: type, event: event)
     let copy = event.copy()
     DispatchQueue.main.async {
         if let copy {
             monitor.handle(type: type, event: copy)
         }
     }
-    return Unmanaged.passUnretained(event)
+    return shouldSuppress ? nil : Unmanaged.passUnretained(event)
 }
