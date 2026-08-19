@@ -37,16 +37,17 @@ parrot doctor                          # check permissions + hotkey settings
 parrot models list                     # list available models
 parrot models download <id>            # pre-download a model
 parrot --model whisper-large-v3-turbo  # bigger, multilingual, slower first-run
-parrot hotkey                           # show the current push-to-talk key
-parrot hotkey right-option              # persist a new push-to-talk key
+parrot hotkey                          # show the learned push-to-talk key
+parrot hotkey learn                    # press a key to learn it dynamically
 parrot --no-overlay                    # disable the bottom-of-screen pill
 ```
 
-Supported hotkeys are `fn`, `caps-lock`, `left-option`, `right-option`,
-`left-control`, `right-control`, `left-command`, `right-command`, `left-shift`,
-and `right-shift`. When selected, Caps Lock is captured for push-to-talk and
-does not toggle capitalization. The setting is saved to
-`~/.config/parrot/config.toml` and takes effect the next time Parrot starts.
+The learner accepts ordinary keys and modifiers, stores the observed macOS key
+code and event family in `~/.config/parrot/config.toml`, and suppresses the key
+while Parrot is running. For programmable keyboards, assigning a dedicated key
+such as F13 gives Parrot a unique input without maintaining a key-name table.
+Firmware behaviors still resolve before macOS sees them: a ZMK hold-tap that
+emits Shift when held will be learned as Shift.
 
 ## Stack
 

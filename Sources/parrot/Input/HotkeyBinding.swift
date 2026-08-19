@@ -1,53 +1,61 @@
-import ArgumentParser
 import CoreGraphics
 import Foundation
 
-enum HotkeyBinding: String, CaseIterable, ExpressibleByArgument {
-    case fn
-    case capsLock = "caps-lock"
-    case leftOption = "left-option"
-    case rightOption = "right-option"
-    case leftControl = "left-control"
-    case rightControl = "right-control"
-    case leftCommand = "left-command"
-    case rightCommand = "right-command"
-    case leftShift = "left-shift"
-    case rightShift = "right-shift"
+enum HotkeyConfigError: LocalizedError {
+    case invalid(String)
 
-    var eventFlags: CGEventFlags {
-        switch self {
-        case .fn: .maskSecondaryFn
-        case .capsLock: .maskAlphaShift
-        case .leftOption, .rightOption: .maskAlternate
-        case .leftControl, .rightControl: .maskControl
-        case .leftCommand, .rightCommand: .maskCommand
-        case .leftShift, .rightShift: .maskShift
+    var errorDescription: String? {
+        if case .invalid(let message) = self { return message }
+        return nil
+    }
+}
+
+struct HotkeyBinding: Equatable {
+    enum EventKind: String {
+        case key
+        case modifier
+    }
+
+    let keyCode: CGKeyCode
+    let eventKind: EventKind
+    let displayName: String
+
+    static let defaultBinding = HotkeyBinding(
+        keyCode: 63,
+        eventKind: .modifier,
+        displayName: "Fn"
+    )
+
+    var isFn: Bool { keyCode == 63 && eventKind == .modifier }
+
+    func matches(type: CGEventType, keyCode candidate: CGKeyCode) -> Bool {
+        guard candidate == keyCode else { return false }
+        switch eventKind {
+        case .key:
+            return type == .keyDown || type == .keyUp
+        case .modifier:
+            return type == .flagsChanged
         }
     }
 
-    // macOS virtual key codes for modifier keys.
-    var keyCode: CGKeyCode {
-        switch self {
-        case .fn: 63
-        case .capsLock: 57
-        case .leftOption: 58
-        case .rightOption: 61
-        case .leftControl: 59
-        case .rightControl: 62
-        case .leftCommand: 55
-        case .rightCommand: 54
-        case .leftShift: 56
-        case .rightShift: 60
+    func nextPressedState(
+        type: CGEventType,
+        keyCode candidate: CGKeyCode,
+        isRepeat: Bool,
+        currentlyPressed: Bool
+    ) -> Bool? {
+        guard matches(type: type, keyCode: candidate) else { return nil }
+        switch eventKind {
+        case .key:
+            if type == .keyDown, !isRepeat { return true }
+            if type == .keyUp { return false }
+            return nil
+        case .modifier:
+            // Modifier and status keys arrive as one flagsChanged event for
+            // each physical edge. Toggling state avoids aggregate flag bugs
+            // when the matching modifier on the other side is also held.
+            return !currentlyPressed
         }
-    }
-
-    var suppressesSystemEvent: Bool { self == .capsLock }
-
-    func nextPressedState(currentlyPressed: Bool, eventFlags: CGEventFlags) -> Bool {
-        // Caps Lock is a toggle, so its flag does not represent the physical
-        // up/down state. Each flagsChanged edge alternates the held state.
-        if self == .capsLock { return !currentlyPressed }
-        return currentlyPressed ? false : eventFlags.contains(self.eventFlags)
     }
 }
 
@@ -60,12 +68,30 @@ struct HotkeyConfigStore {
     }
 
     func load() throws -> HotkeyBinding {
-        guard FileManager.default.fileExists(atPath: url.path) else { return .fn }
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .defaultBinding
+        }
         let contents = try String(contentsOf: url, encoding: .utf8)
-        guard let value = Self.hotkeyValue(in: contents) else { return .fn }
-        guard let binding = HotkeyBinding(rawValue: value) else {
-            throw ValidationError(
-                "invalid hotkey '\(value)' in \(url.path); expected one of: \(Self.supportedValues)"
+
+        if let keyCodeValue = Self.value(for: "hotkey_keycode", in: contents) {
+            guard let keyCode = UInt16(keyCodeValue),
+                  let kindValue = Self.quotedValue(for: "hotkey_event", in: contents),
+                  let kind = HotkeyBinding.EventKind(rawValue: kindValue)
+            else {
+                throw HotkeyConfigError.invalid(
+                    "invalid learned hotkey in \(url.path); run `parrot hotkey learn`"
+                )
+            }
+            let name = Self.quotedValue(for: "hotkey_name", in: contents) ?? "Key \(keyCode)"
+            return HotkeyBinding(keyCode: keyCode, eventKind: kind, displayName: name)
+        }
+
+        guard let legacyName = Self.quotedValue(for: "hotkey", in: contents) else {
+            return .defaultBinding
+        }
+        guard let binding = Self.legacyBindings[legacyName] else {
+            throw HotkeyConfigError.invalid(
+                "unknown legacy hotkey '\(legacyName)' in \(url.path); run `parrot hotkey learn`"
             )
         }
         return binding
@@ -84,38 +110,62 @@ struct HotkeyConfigStore {
         var lines = existing.isEmpty
             ? []
             : existing.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        let replacement = "hotkey = \"\(binding.rawValue)\""
+        let managedKeys = ["hotkey", "hotkey_keycode", "hotkey_event", "hotkey_name"]
+        lines.removeAll { line in managedKeys.contains { Self.isLine(line, for: $0) } }
+        while lines.last == "" { lines.removeLast() }
+        if !lines.isEmpty { lines.append("") }
+        lines.append("hotkey_keycode = \(binding.keyCode)")
+        lines.append("hotkey_event = \"\(binding.eventKind.rawValue)\"")
+        lines.append("hotkey_name = \"\(Self.escape(binding.displayName))\"")
 
-        if let index = lines.firstIndex(where: Self.isHotkeyLine) {
-            lines[index] = replacement
-        } else {
-            if !lines.isEmpty, lines.last != "" { lines.append("") }
-            lines.append(replacement)
-        }
-
-        var updated = lines.joined(separator: "\n")
-        if !updated.hasSuffix("\n") { updated.append("\n") }
-        try updated.write(to: url, atomically: true, encoding: .utf8)
+        try (lines.joined(separator: "\n") + "\n").write(
+            to: url,
+            atomically: true,
+            encoding: .utf8
+        )
     }
 
-    private static var supportedValues: String {
-        HotkeyBinding.allCases.map(\.rawValue).joined(separator: ", ")
-    }
+    private static let legacyBindings: [String: HotkeyBinding] = [
+        "fn": .defaultBinding,
+        "caps-lock": HotkeyBinding(keyCode: 57, eventKind: .modifier, displayName: "Caps Lock"),
+        "left-option": HotkeyBinding(keyCode: 58, eventKind: .modifier, displayName: "Left Option"),
+        "right-option": HotkeyBinding(keyCode: 61, eventKind: .modifier, displayName: "Right Option"),
+        "left-control": HotkeyBinding(keyCode: 59, eventKind: .modifier, displayName: "Left Control"),
+        "right-control": HotkeyBinding(keyCode: 62, eventKind: .modifier, displayName: "Right Control"),
+        "left-command": HotkeyBinding(keyCode: 55, eventKind: .modifier, displayName: "Left Command"),
+        "right-command": HotkeyBinding(keyCode: 54, eventKind: .modifier, displayName: "Right Command"),
+        "left-shift": HotkeyBinding(keyCode: 56, eventKind: .modifier, displayName: "Left Shift"),
+        "right-shift": HotkeyBinding(keyCode: 60, eventKind: .modifier, displayName: "Right Shift"),
+    ]
 
-    private static func isHotkeyLine(_ line: String) -> Bool {
+    private static func isLine(_ line: String, for key: String) -> Bool {
         let parts = line.split(separator: "=", maxSplits: 1)
-        return parts.first?.trimmingCharacters(in: .whitespaces) == "hotkey"
+        return parts.first?.trimmingCharacters(in: .whitespaces) == key
     }
 
-    private static func hotkeyValue(in contents: String) -> String? {
-        guard let line = contents.components(separatedBy: .newlines).first(where: isHotkeyLine),
+    private static func value(for key: String, in contents: String) -> String? {
+        guard let line = contents.components(separatedBy: .newlines)
+            .first(where: { isLine($0, for: key) }),
               let equals = line.firstIndex(of: "=")
         else { return nil }
-
-        let value = line[line.index(after: equals)...]
+        return line[line.index(after: equals)...]
             .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
             .trimmingCharacters(in: .whitespaces)
-        guard value.count >= 2, value.first == "\"", value.last == "\"" else { return nil }
+    }
+
+    private static func quotedValue(for key: String, in contents: String) -> String? {
+        guard let value = value(for: key, in: contents),
+              value.count >= 2,
+              value.first == "\"",
+              value.last == "\""
+        else { return nil }
         return String(value.dropFirst().dropLast())
+            .replacingOccurrences(of: "\\\"", with: "\"")
+            .replacingOccurrences(of: "\\\\", with: "\\")
+    }
+
+    private static func escape(_ value: String) -> String {
+        value.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 }

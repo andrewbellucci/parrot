@@ -72,12 +72,13 @@ Subcommands:
 - `parrot models list` — show registered models, mark which are downloaded
 - `parrot models download <id>` — pre-fetch a model
 - `parrot doctor` — check microphone and accessibility permissions, print remediation steps
-- `parrot hotkey [key]` — show or persist the push-to-talk key
+- `parrot hotkey` — show the learned push-to-talk event
+- `parrot hotkey learn` — capture and persist the next press/release gesture
 - `parrot restart` — restart a loaded LaunchAgent, or bootstrap an installed one
 
 ### `HotkeyMonitor`
 
-Global hotkey via `CGEventTap` (requires Accessibility permission). Default: **hold Fn**. Modifier key codes distinguish left and right variants, while event flags distinguish press and release edges. Caps Lock uses an active event filter and alternating edges so it acts as a hold key without toggling capitalization; the other bindings use a passive event tap. Emits `.pressed` / `.released`. Configurable via `parrot hotkey <key>` or the config file.
+Global hotkey via an active `CGEventTap` (requires Accessibility permission). Default: **hold Fn**. `HotkeyLearner` captures either a `keyDown`/`keyUp` pair or two modifier `flagsChanged` edges and persists the observed key code plus event family. `HotkeyMonitor` matches that learned description, suppresses the key from foreground apps, and emits `.pressed` / `.released`. This supports arbitrary macOS-visible keys without a runtime key-name table.
 
 **Fn key caveat:** macOS by default maps the Fn (🌐) key to "Show Emoji & Symbols" or "Start Dictation" depending on the user's setting in System Settings → Keyboard → Press 🌐 key to. The CGEventTap sees the keypress regardless, but the system action also fires. `parrot doctor` will detect this setting and instruct the user to change it to "Do Nothing" so Fn becomes a clean modifier.
 
@@ -154,23 +155,26 @@ On first selection (or via `parrot models download <id>`), downloads to `~/Libra
 
 ### `Config`
 
-The persistent hotkey setting is stored in `~/.config/parrot/config.toml`:
+The learned hotkey setting is stored in `~/.config/parrot/config.toml`:
 
 ```toml
-hotkey = "fn"
+hotkey_keycode = 105
+hotkey_event = "key"
+hotkey_name = "Key 105"
 ```
 
-Use `parrot hotkey <key>` to update it while preserving other TOML settings.
-Model and overlay selection remain runtime CLI flags.
+Use `parrot hotkey learn` to update it while preserving other TOML settings.
+Legacy named `hotkey = "..."` values remain supported when read. Model and
+overlay selection remain runtime CLI flags.
 
 ## Permissions
 
 Two prompts on first run, both surfaced via `parrot doctor`:
 
 1. **Microphone** — standard `AVCaptureDevice` request, fires on first audio engine start.
-2. **Accessibility** — required for `CGEventTap` (hotkey) and `CGEvent` posting (text injection). User toggles in System Settings → Privacy & Security → Accessibility, granting the *terminal* (or whatever launched parrot) permission, since the binary inherits its parent's TCC identity.
+2. **Accessibility** — required for `CGEventTap` (hotkey) and `CGEvent` posting (text injection). User toggles `/usr/local/bin/parrot` in System Settings → Privacy & Security → Accessibility. Local builds are ad-hoc signed, so replacing the binary changes its code identity and can require removing and re-adding the permission entry.
 
-`parrot doctor` checks both and prints actionable next steps if either is missing. Without these, the daemon refuses to start.
+`parrot doctor` checks both and prints actionable next steps if either is missing. Without these, the daemon refuses to start. Only explicit foreground setup/learning commands request the system Accessibility prompt; the daemon checks silently and exits successfully when permission is missing so its LaunchAgent does not create a prompt loop.
 
 ### TCC quirk worth knowing
 

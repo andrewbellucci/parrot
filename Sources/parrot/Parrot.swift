@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import ArgumentParser
 import Foundation
 import WhisperKit
@@ -44,6 +45,14 @@ struct Run: ParsableCommand {
 
     func run() throws {
         let hotkey = try HotkeyConfigStore().load()
+        guard AXIsProcessTrusted() else {
+            FileHandle.standardError.write(Data(
+                "accessibility not granted — run `parrot setup`, then restart parrot.\n".utf8
+            ))
+            // The LaunchAgent restarts only after unsuccessful exits. Missing
+            // permission requires user action, so exit cleanly instead of looping.
+            throw ExitCode.success
+        }
         if !skipDoctor {
             let checks = DoctorReport.run(hotkey: hotkey)
             if !DoctorReport.allOK(checks) {
@@ -163,6 +172,11 @@ struct Run: ParsableCommand {
                     }
                 }
             }
+        } catch HotkeyMonitor.HotkeyError.accessibilityDenied {
+            FileHandle.standardError.write(Data(
+                "accessibility not granted — run `parrot setup`, then restart parrot.\n".utf8
+            ))
+            throw ExitCode.success
         } catch {
             FileHandle.standardError.write(Data("failed to register hotkey tap: \(error)\n".utf8))
             FileHandle.standardError.write(Data("run `parrot setup` to configure permissions.\n".utf8))
@@ -178,7 +192,9 @@ struct Run: ParsableCommand {
         sigint.resume()
         signal(SIGINT, SIG_IGN)
 
-        FileHandle.standardError.write(Data("listening on \(hotkey.rawValue) hold · model: \(chosenModel.id) · ^C to quit\n".utf8))
+        FileHandle.standardError.write(Data(
+            "listening on \(hotkey.displayName) (keycode \(hotkey.keyCode)) · model: \(chosenModel.id) · ^C to quit\n".utf8
+        ))
         app.run()
     }
 }
@@ -200,21 +216,36 @@ struct Doctor: ParsableCommand {
 struct HotkeyCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "hotkey",
-        abstract: "Show or change the push-to-talk key."
+        abstract: "Show or learn the push-to-talk key.",
+        subcommands: [Learn.self]
     )
 
-    @Argument(help: "New hotkey (\(HotkeyBinding.allCases.map(\.rawValue).joined(separator: ", "))).")
-    var key: HotkeyBinding?
-
     func run() throws {
-        let store = HotkeyConfigStore()
-        guard let key else {
-            print(try store.load().rawValue)
-            return
+        let binding = try HotkeyConfigStore().load()
+        print("\(binding.displayName) · keycode \(binding.keyCode) · \(binding.eventKind.rawValue)")
+    }
+
+    struct Learn: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Capture the next key press and save it as push-to-talk."
+        )
+
+        func run() throws {
+            let binding: HotkeyBinding
+            do {
+                binding = try HotkeyLearner().learn()
+            } catch HotkeyLearner.LearnerError.accessibilityDenied {
+                throw ValidationError(
+                    "Accessibility is required; grant it in System Settings, then retry"
+                )
+            }
+            try HotkeyConfigStore().save(binding)
+            print(
+                "✓ hotkey learned: \(binding.displayName) "
+                    + "(keycode \(binding.keyCode), \(binding.eventKind.rawValue))"
+            )
+            print("  run `parrot restart` for the change to take effect")
         }
-        try store.save(key)
-        print("✓ hotkey set to \(key.rawValue)")
-        print("  run `parrot restart` for the change to take effect")
     }
 }
 

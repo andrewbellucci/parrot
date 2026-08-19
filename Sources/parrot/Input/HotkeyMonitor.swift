@@ -8,7 +8,7 @@ import Foundation
 /// will see an error from `start()`.
 final class HotkeyMonitor {
     enum Event { case pressed, released }
-    enum HotkeyError: Error { case tapCreateFailed }
+    enum HotkeyError: Error { case accessibilityDenied, tapCreateFailed }
 
     private let binding: HotkeyBinding
     private let debug: Bool
@@ -17,7 +17,7 @@ final class HotkeyMonitor {
     private var runLoopSource: CFRunLoopSource?
     private var isPressed = false
 
-    init(binding: HotkeyBinding = .fn, debug: Bool = false) {
+    init(binding: HotkeyBinding = .defaultBinding, debug: Bool = false) {
         self.binding = binding
         self.debug = debug
     }
@@ -25,14 +25,7 @@ final class HotkeyMonitor {
     func start(onEvent: @escaping (Event) -> Void) throws {
         self.onEvent = onEvent
 
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        let trusted = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
-        if !trusted {
-            FileHandle.standardError.write(Data(
-                "accessibility not granted — system prompt opened. Grant access, then quit and relaunch parrot.\n".utf8
-            ))
-            throw HotkeyError.tapCreateFailed
-        }
+        guard AXIsProcessTrusted() else { throw HotkeyError.accessibilityDenied }
 
         let mask: CGEventMask =
             (1 << CGEventType.flagsChanged.rawValue)
@@ -40,14 +33,13 @@ final class HotkeyMonitor {
             | (1 << CGEventType.keyUp.rawValue)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
-        // .cgSessionEventTap is the right level for an accessibility-granted
-        // user process (.cghidEventTap requires root). Caps Lock uses an active
-        // filter so holding the push-to-talk key does not toggle capitalization.
+        // An active filter prevents the learned push-to-talk key from reaching
+        // the foreground app. This matters for character keys and Caps Lock.
         guard
             let tap = CGEvent.tapCreate(
                 tap: .cgSessionEventTap,
                 place: .headInsertEventTap,
-                options: binding.suppressesSystemEvent ? .defaultTap : .listenOnly,
+                options: .defaultTap,
                 eventsOfInterest: mask,
                 callback: hotkeyCallback,
                 userInfo: userInfo
@@ -86,22 +78,22 @@ final class HotkeyMonitor {
                         .utf8
                 ))
         }
-        guard type == .flagsChanged else { return }
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-        guard keyCode == binding.keyCode else { return }
+        let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
         let pressed = binding.nextPressedState(
+            type: type,
+            keyCode: keyCode,
+            isRepeat: isRepeat,
             currentlyPressed: isPressed,
-            eventFlags: event.flags
         )
-        guard pressed != isPressed else { return }
+        guard let pressed, pressed != isPressed else { return }
         isPressed = pressed
         onEvent?(pressed ? .pressed : .released)
     }
 
     fileprivate func shouldSuppress(type: CGEventType, event: CGEvent) -> Bool {
-        guard binding.suppressesSystemEvent, type == .flagsChanged else { return false }
         let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
-        return keyCode == binding.keyCode
+        return binding.matches(type: type, keyCode: keyCode)
     }
 }
 

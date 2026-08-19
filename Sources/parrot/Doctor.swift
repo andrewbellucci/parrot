@@ -16,12 +16,12 @@ struct Check {
 }
 
 enum DoctorReport {
-    static func run(hotkey: HotkeyBinding = .fn) -> [Check] {
+    static func run(hotkey: HotkeyBinding = .defaultBinding) -> [Check] {
         var checks = [
             checkMicrophone(),
             checkAccessibility(),
         ]
-        if hotkey == .fn { checks.append(checkFnKeyMapping()) }
+        if hotkey.isFn { checks.append(checkFnKeyMapping()) }
         return checks
     }
 
@@ -34,7 +34,7 @@ enum DoctorReport {
             return Check(
                 name: "microphone",
                 status: .warn("not yet requested — will prompt on first recording"),
-                remediation: "run parrot and hold Fn once; macOS will prompt"
+                remediation: "run parrot and hold the push-to-talk key once; macOS will prompt"
             )
         case .denied, .restricted:
             return Check(
